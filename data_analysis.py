@@ -271,6 +271,128 @@ def generate_insights(df):
     
     return insights
 
+def rank_metrics_by_significance(df, top_n=10, min_periods=3):
+    """
+    Rank metrics by their statistical significance of change over time
+    
+    This function:
+    1. For each metric, calculates the magnitude of change over time
+    2. Determines statistical significance of trends
+    3. Ranks metrics by a composite score based on:
+       - Absolute percentage change (start to end)
+       - Statistical significance (p-value)
+       - Consistency of the trend (R-squared value)
+       - Presence of outliers
+    
+    Parameters:
+    ----------
+    df : pandas.DataFrame
+        DataFrame with store metrics that includes outlier flags
+    top_n : int
+        Number of most significant metrics to return
+    min_periods : int
+        Minimum number of time periods required for trend analysis
+        
+    Returns:
+    -------
+    pandas.DataFrame
+        Top N metrics ranked by significance, with significance metrics
+    """
+    import pandas as pd
+    import numpy as np
+    from scipy import stats
+    
+    metric_significance = []
+    
+    # Group by metric to analyze each one separately
+    for metric_name in df['metric'].unique():
+        metric_df = df[df['metric'] == metric_name]
+        
+        # Calculate weekly average across all stores
+        weekly_avg = metric_df.groupby('year_week')['value'].mean().reset_index()
+        weekly_avg = weekly_avg.sort_values('year_week')
+        
+        # Skip metrics with too few data points
+        if len(weekly_avg) < min_periods:
+            continue
+            
+        # Calculate percentage change from first to last period
+        first_value = weekly_avg['value'].iloc[0]
+        last_value = weekly_avg['value'].iloc[-1]
+        
+        # Avoid division by zero
+        if first_value == 0:
+            first_value = 0.0001  # Small non-zero value
+            
+        pct_change = ((last_value - first_value) / abs(first_value)) * 100
+        abs_pct_change = abs(pct_change)
+        
+        # Perform linear regression to assess trend
+        x = np.arange(len(weekly_avg))
+        y = weekly_avg['value'].values
+        
+        # Calculate trend statistics
+        slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+        
+        # Calculate median absolute deviation as a measure of volatility
+        median_value = np.median(weekly_avg['value'])
+        mad = np.median(np.abs(weekly_avg['value'] - median_value))
+        
+        # Calculate percentage of outliers for this metric
+        outlier_pct = (metric_df['is_outlier'].sum() / len(metric_df)) * 100
+        
+        # Composite significance score:
+        # Higher for:
+        # - Large percentage changes
+        # - Statistically significant trends (low p-value)
+        # - Consistent trends (high R-squared)
+        # - High volatility (measured by MAD relative to median)
+        # - Presence of outliers
+        
+        # Convert p-value to significance factor (higher = more significant)
+        # p-value of 0.05 or less is considered statistically significant
+        significance_factor = 1 - min(p_value, 0.99)  # Invert p-value, cap at 0.99
+        
+        # R-squared measures how well the trend line fits the data
+        r_squared = r_value ** 2
+        
+        # Calculate composite score - you can adjust weights as needed
+        composite_score = (
+            (0.4 * abs_pct_change) +  # 40% weight on absolute percentage change
+            (0.3 * significance_factor * 100) +  # 30% weight on statistical significance
+            (0.2 * r_squared * 100) +  # 20% weight on trend consistency
+            (0.1 * outlier_pct)  # 10% weight on presence of outliers
+        )
+        
+        # Collect all metrics for this metric
+        metric_significance.append({
+            'metric': metric_name,
+            'abs_pct_change': abs_pct_change,
+            'pct_change': pct_change,
+            'direction': 'up' if pct_change > 0 else 'down',
+            'p_value': p_value,
+            'significant': p_value < 0.05,
+            'r_squared': r_squared,
+            'volatility': mad / (median_value if median_value != 0 else 0.0001),
+            'outlier_pct': outlier_pct,
+            'composite_score': composite_score,
+            'slope': slope,
+            'num_periods': len(weekly_avg)
+        })
+    
+    # Convert to DataFrame and sort by composite score (descending)
+    significance_df = pd.DataFrame(metric_significance)
+    
+    if len(significance_df) == 0:
+        return pd.DataFrame(columns=['metric', 'composite_score', 'abs_pct_change', 'direction', 
+                                    'p_value', 'significant', 'r_squared', 'outlier_pct'])
+    
+    # Sort by composite score (descending)
+    significance_df = significance_df.sort_values('composite_score', ascending=False)
+    
+    # Return the top N most significant metrics
+    return significance_df.head(top_n)
+
 def plot_metric_summary(df, metric_name, output_dir=None):
     """
     Create summary visualizations for a metric that work well with large store counts
@@ -434,6 +556,127 @@ def plot_outliers(df, metric_name, output_dir=None):
     """
     return plot_metric_summary(df, metric_name, output_dir)
 
+# Add a visualization specifically for the most significant metrics
+def plot_significant_metrics(significant_metrics, df, output_dir=None):
+    """
+    Create a summary visualization of the most significant metrics
+    
+    Parameters:
+    - significant_metrics: DataFrame with metrics ranked by significance
+    - df: Original DataFrame with all metrics data
+    - output_dir: Directory to save the plot, if None, just show it
+    
+    Returns:
+    - Path to saved plot if output_dir is provided
+    """
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import numpy as np
+    import os
+    from matplotlib.gridspec import GridSpec
+    
+    # Get the top 10 metrics or less if fewer are available
+    top_metrics = significant_metrics.head(min(10, len(significant_metrics)))
+    
+    if len(top_metrics) == 0:
+        print("No significant metrics to plot.")
+        return None
+        
+    # Create a larger figure to show all the metrics
+    plt.figure(figsize=(16, 12))
+    gs = GridSpec(2, 2, width_ratios=[2, 1], height_ratios=[1, 2])
+    
+    # 1. Bar chart of composite scores (top left)
+    ax1 = plt.subplot(gs[0, 0])
+    
+    # Plot the metrics by composite score
+    score_chart = sns.barplot(
+        x='metric', 
+        y='composite_score',
+        data=top_metrics.sort_values('composite_score', ascending=False),
+        ax=ax1,
+        palette='viridis'
+    )
+    
+    ax1.set_title('Metrics Ranked by Significance Score', fontsize=14)
+    ax1.set_ylabel('Composite Score')
+    ax1.set_xlabel('')
+    ax1.tick_params(axis='x', rotation=45, labelsize=10)
+    
+    # 2. Percentage change visualization (top right)
+    ax2 = plt.subplot(gs[0, 1])
+    
+    # Create color mapping based on direction
+    colors = ['green' if x > 0 else 'red' for x in top_metrics['pct_change']]
+    
+    # Plot horizontal bars for percentage change
+    bars = ax2.barh(
+        top_metrics['metric'], 
+        top_metrics['pct_change'],
+        color=colors
+    )
+    
+    # Add percentage labels
+    for bar in bars:
+        width = bar.get_width()
+        label_x_pos = width + 1 if width > 0 else width - 5
+        ax2.text(label_x_pos, bar.get_y() + bar.get_height()/2, 
+                 f'{width:.1f}%', va='center', fontsize=9)
+    
+    ax2.set_title('Percentage Change', fontsize=14)
+    ax2.set_xlabel('% Change')
+    ax2.set_ylabel('')
+    ax2.axvline(x=0, color='black', linestyle='-', alpha=0.3)
+    ax2.grid(True, alpha=0.3)
+    
+    # 3. Trend visualization (bottom)
+    ax3 = plt.subplot(gs[1, :])
+    
+    # Plot trend lines for all top metrics
+    for i, (_, row) in enumerate(top_metrics.iterrows()):
+        metric_name = row['metric']
+        metric_df = df[df['metric'] == metric_name].copy()
+        
+        # Calculate weekly average across all stores
+        weekly_avg = metric_df.groupby('year_week')['value'].mean().reset_index()
+        weekly_avg = weekly_avg.sort_values('year_week')
+        
+        # Normalize values to start at 100 for better comparison
+        first_val = weekly_avg['value'].iloc[0]
+        weekly_avg['normalized'] = (weekly_avg['value'] / first_val) * 100
+        
+        # Plot the trend line
+        ax3.plot(
+            weekly_avg.index, 
+            weekly_avg['normalized'], 
+            marker='o', 
+            markersize=4,
+            linewidth=2,
+            alpha=0.8,
+            label=f"{metric_name} ({row['pct_change']:.1f}%)"
+        )
+    
+    ax3.set_title('Normalized Trends of Top Metrics (Starting at 100)', fontsize=14)
+    ax3.set_xlabel('Time Period')
+    ax3.set_ylabel('Normalized Value (Starting at 100)')
+    ax3.legend(loc='best', fontsize=9)
+    ax3.grid(True, alpha=0.3)
+    
+    # Overall title
+    plt.suptitle('Summary of Most Significant Metrics', fontsize=16)
+    plt.tight_layout()
+    
+    # Save or show the plot
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        file_path = os.path.join(output_dir, 'significant_metrics_summary.png')
+        plt.savefig(file_path, bbox_inches='tight', dpi=300)
+        plt.close()
+        return file_path
+    else:
+        plt.show()
+        return None
+
 def format_insights_email(insights):
     """
     Format insights into an email-ready format
@@ -505,8 +748,10 @@ def format_insights_email(insights):
     
     return email
 
+
 def analyze_store_metrics(file_path="store_metrics.csv", output_dir="output", 
-                      test_flag_column=None, outlier_threshold=2.5):
+                      test_flag_column=None, outlier_threshold=2.5, 
+                      top_metrics=10, analyze_all=False):
     """
     Main function to analyze store metrics data
     
@@ -515,6 +760,8 @@ def analyze_store_metrics(file_path="store_metrics.csv", output_dir="output",
     - output_dir: Directory to save plots and output files
     - test_flag_column: Column name that indicates test/control groups (if applicable)
     - outlier_threshold: Threshold for outlier detection (Z-score or IQR multiplier)
+    - top_metrics: Number of most significant metrics to focus on
+    - analyze_all: If True, analyze all metrics; if False, focus on top significant metrics
     """
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
@@ -571,30 +818,80 @@ def analyze_store_metrics(file_path="store_metrics.csv", output_dir="output",
     df_with_outliers.to_csv(processed_file, index=False)
     print(f"Processed data saved to {processed_file}")
     
-    # Generate insights
+    # Rank metrics by significance and identify the most important ones
+    print(f"Ranking metrics by significance...")
+    significant_metrics = rank_metrics_by_significance(df_with_outliers, top_n=top_metrics)
+    
+    # Save the list of significant metrics
+    sig_metrics_file = os.path.join(output_dir, "significant_metrics.csv")
+    significant_metrics.to_csv(sig_metrics_file, index=False)
+    print(f"Significant metrics saved to {sig_metrics_file}")
+    
+    # Print the list of significant metrics
+    print("\nMost significant metrics:")
+    for i, (_, row) in enumerate(significant_metrics.iterrows(), 1):
+        print(f"{i}. {row['metric']} - Score: {row['composite_score']:.2f}, " +
+             f"Change: {row['pct_change']:.2f}% ({row['direction']}), " +
+             f"p-value: {row['p_value']:.4f}")
+    
+    # Determine which metrics to analyze further
+    if analyze_all:
+        metrics_to_analyze = metrics
+        print("\nAnalyzing all metrics...")
+    else:
+        metrics_to_analyze = significant_metrics['metric'].tolist()
+        print(f"\nFocusing analysis on the top {len(metrics_to_analyze)} most significant metrics...")
+    
+    # Filter the data to include only the metrics we're analyzing
+    focused_df = df_with_outliers[df_with_outliers['metric'].isin(metrics_to_analyze)]
+    
+    # Generate insights on the focused metrics
     print("Generating insights...")
-    insights = generate_insights(df_with_outliers)
+    insights = generate_insights(focused_df)
     
     # Format insights for email
     email_text = format_insights_email(insights)
+    
+    # Add the significance ranking to the email
+    email_text += "\n\nMOST SIGNIFICANT METRICS\n"
+    email_text += "-" * 30 + "\n"
+    
+    for i, (_, row) in enumerate(significant_metrics.iterrows(), 1):
+        sig_status = "statistically significant" if row['significant'] else "not statistically significant"
+        email_text += f"{i}. {row['metric']}:\n"
+        email_text += f"   - Change: {row['pct_change']:.2f}% ({row['direction']})\n"
+        email_text += f"   - Trend: {sig_status} (p-value: {row['p_value']:.4f})\n"
+        email_text += f"   - Consistency (R²): {row['r_squared']:.2f}\n"
+        email_text += f"   - Outliers: {row['outlier_pct']:.1f}% of data points\n"
+        email_text += f"   - Overall Significance Score: {row['composite_score']:.2f}\n\n"
+    
+    # Save the updated email
     email_file = os.path.join(output_dir, "store_metrics_insights.txt")
     with open(email_file, 'w') as f:
         f.write(email_text)
     print(f"Insights email saved to {email_file}")
     
-    # Generate summary plots for each metric
+    # Generate summary plots for the focused metrics
     print("Generating plots...")
-    for i, metric_name in enumerate(metrics, 1):
-        print(f"Creating summary visualization for metric {i}/{len(metrics)}: {metric_name}")
-        plot_outliers(df_with_outliers, metric_name, output_dir)
+    for i, metric_name in enumerate(metrics_to_analyze, 1):
+        print(f"Creating summary visualization for metric {i}/{len(metrics_to_analyze)}: {metric_name}")
+        plot_outliers(focused_df, metric_name, output_dir)
     
     print(f"Analysis complete! All output saved to {output_dir}")
     
-    return df_with_outliers, insights, email_text
+    return df_with_outliers, insights, email_text, significant_metrics
 
 if __name__ == "__main__":
-    # Run the analysis on the generated data
-    df, insights, email = analyze_store_metrics("store_metrics.csv", "analysis_output")
+    # Updated main execution block
+    df, insights, email, significant_metrics = analyze_store_metrics(
+        "store_metrics.csv", 
+        "analysis_output",
+        top_metrics=10,
+        analyze_all=False
+    )
+    
+    # Create a summary visualization of the significant metrics
+    plot_significant_metrics(significant_metrics, df, "analysis_output")
     
     # Print the email to console
     print("\nSample Email Content:")

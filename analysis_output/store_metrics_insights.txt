@@ -1,0 +1,147 @@
+STORE METRICS ANALYSIS SUMMARY
+==================================================
+
+OUTLIER DETECTION
+------------------------------
+- avg_ticket: 3 outliers detected
+- conversion_rate: 2 outliers detected
+- items_per_visit: 3 outliers detected
+- sales: 2 outliers detected
+- visits: 1 outliers detected
+
+Stores with most outliers:
+- Store #15: 3 outliers
+- Store #7: 2 outliers
+- Store #3: 1 outliers
+- Store #1: 1 outliers
+- Store #6: 1 outliers
+
+
+PERFORMANCE SUMMARY
+------------------------------
+
+SALES
+Top performers:
+- Store #13: 13582.88 (Rank: 1)
+- Store #5: 12194.57 (Rank: 2)
+- Store #8: 11712.19 (Rank: 3)
+
+Bottom performers:
+- Store #2: 7678.05 (Rank: 15)
+- Store #9: 8176.06 (Rank: 14)
+- Store #11: 8454.31 (Rank: 13)
+
+VISITS
+Top performers:
+- Store #13: 627.83 (Rank: 1)
+- Store #5: 626.75 (Rank: 2)
+- Store #8: 580.00 (Rank: 3)
+
+Bottom performers:
+- Store #2: 350.17 (Rank: 15)
+- Store #9: 420.08 (Rank: 14)
+- Store #14: 449.00 (Rank: 13)
+
+ITEMS_PER_VISIT
+Top performers:
+- Store #5: 3.08 (Rank: 1)
+- Store #13: 3.06 (Rank: 2)
+- Store #8: 2.90 (Rank: 3)
+
+Bottom performers:
+- Store #2: 1.58 (Rank: 15)
+- Store #14: 2.21 (Rank: 14)
+- Store #6: 2.26 (Rank: 13)
+
+CONVERSION_RATE
+Top performers:
+- Store #5: 0.37 (Rank: 1)
+- Store #15: 0.36 (Rank: 2)
+- Store #13: 0.35 (Rank: 3)
+
+Bottom performers:
+- Store #2: 0.20 (Rank: 15)
+- Store #9: 0.25 (Rank: 14)
+- Store #11: 0.25 (Rank: 13)
+
+AVG_TICKET
+Top performers:
+- Store #5: 24.70 (Rank: 1)
+- Store #7: 23.92 (Rank: 2)
+- Store #13: 23.41 (Rank: 3)
+
+Bottom performers:
+- Store #2: 13.54 (Rank: 15)
+- Store #9: 16.74 (Rank: 14)
+- Store #14: 17.34 (Rank: 13)
+
+
+TREND ANALYSIS
+------------------------------
+- sales: Trending ↓ (not significant, strength: 0.07)
+- visits: Trending ↓ (not significant, strength: 0.29)
+- items_per_visit: Trending ↓ (not significant, strength: 0.01)
+- conversion_rate: Trending ↓ (not significant, strength: 0.00)
+- avg_ticket: Trending ↑ (not significant, strength: 0.10)
+
+
+CONSISTENCY ANALYSIS
+------------------------------
+Most consistent stores by metric:
+- avg_ticket: Store #8 (CV: 0.11)
+- conversion_rate: Store #15 (CV: 0.14)
+- items_per_visit: Store #5 (CV: 0.15)
+- sales: Store #8 (CV: 0.14)
+- visits: Store #1 (CV: 0.13)
+
+Least consistent stores by metric:
+- avg_ticket: Store #15 (CV: 0.51)
+- conversion_rate: Store #7 (CV: 0.31)
+- items_per_visit: Store #9 (CV: 0.34)
+- sales: Store #13 (CV: 0.33)
+- visits: Store #3 (CV: 0.34)
+
+
+See attached visualizations for more detailed analysis. Each metric has a summary chart showing:
+- Overall distribution with outliers highlighted
+- Top 5 and bottom 5 performing stores
+- Weekly trend analysis
+
+
+MOST SIGNIFICANT METRICS
+------------------------------
+1. visits:
+   - Change: -10.38% (down)
+   - Trend: not statistically significant (p-value: 0.3584)
+   - Consistency (R²): 0.08
+   - Outliers: 0.6% of data points
+   - Overall Significance Score: 25.15
+
+2. avg_ticket:
+   - Change: 1.00% (up)
+   - Trend: not statistically significant (p-value: 0.7507)
+   - Consistency (R²): 0.01
+   - Outliers: 1.7% of data points
+   - Overall Significance Score: 8.26
+
+3. sales:
+   - Change: -4.26% (down)
+   - Trend: not statistically significant (p-value: 0.8176)
+   - Consistency (R²): 0.01
+   - Outliers: 1.1% of data points
+   - Overall Significance Score: 7.40
+
+4. conversion_rate:
+   - Change: 8.02% (up)
+   - Trend: not statistically significant (p-value: 0.9889)
+   - Consistency (R²): 0.00
+   - Outliers: 1.1% of data points
+   - Overall Significance Score: 3.65
+
+5. items_per_visit:
+   - Change: 1.87% (up)
+   - Trend: not statistically significant (p-value: 0.9799)
+   - Consistency (R²): 0.00
+   - Outliers: 1.7% of data points
+   - Overall Significance Score: 1.52
+
