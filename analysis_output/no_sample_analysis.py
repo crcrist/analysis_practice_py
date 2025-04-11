@@ -15,7 +15,7 @@ import time
 import warnings
 warnings.filterwarnings('ignore')
 
-# Set basic figure size but skip seaborn style that was causing errors
+# Set basic figure size
 plt.rcParams['figure.figsize'] = (12, 8)
 
 ## 2. Data Loading and Optimization
@@ -41,166 +41,18 @@ def optimize_dataframe(df):
     
     return df
 
-def create_sample_data(n_stores=5000, n_metrics=50, n_weeks=10, with_outliers=True):
-    """Create realistic sample data for large scale testing."""
-    print(f"Creating sample data with {n_stores} stores and {n_metrics} metrics...")
-    
-    # Define parameters
-    stores = list(range(1, n_stores + 1))
-    year_weeks = [202401 + i for i in range(n_weeks)]
-    
-    # Create metric names (sales, visits, etc. + additional metrics)
-    base_metrics = ['sales', 'visits', 'units_sold', 'items_per_person']
-    ratio_metrics = ['conversion_rate', 'items_per_person', 'sales_per_visit', 'return_rate']
-    
-    # Generate additional metrics to reach desired count
-    additional_metrics = []
-    for i in range(n_metrics - len(base_metrics + ratio_metrics)):
-        if i % 3 == 0:  # Make every third one a ratio metric
-            additional_metrics.append(f'ratio_metric_{i}')
-        else:
-            additional_metrics.append(f'value_metric_{i}')
-    
-    # Combine all metrics
-    all_metrics = base_metrics + [m for m in ratio_metrics if m not in base_metrics] + additional_metrics
-    all_metrics = all_metrics[:n_metrics]  # Ensure we have exactly n_metrics
-    
-    # Determine which metrics are ratios
-    ratio_metrics = [m for m in all_metrics if 'ratio' in m or 'per' in m or 'rate' in m]
-    
-    # Create store profiles for more realistic data
-    # Each store has a base multiplier for different metric categories
-    store_profiles = {}
-    for store in stores:
-        profile = {
-            'sales_factor': np.random.normal(1, 0.3),  # Mean 1, std 0.3
-            'traffic_factor': np.random.normal(1, 0.3),
-            'conversion_factor': np.random.normal(1, 0.2),
-            'size_category': np.random.choice(['small', 'medium', 'large'], p=[0.2, 0.5, 0.3])
-        }
-        # Size affects base values
-        if profile['size_category'] == 'small':
-            profile['base_multiplier'] = 0.7
-        elif profile['size_category'] == 'medium':
-            profile['base_multiplier'] = 1.0
-        else:  # large
-            profile['base_multiplier'] = 1.5
-            
-        store_profiles[store] = profile
-    
-    # Create data in chunks to avoid memory issues
-    chunk_size = 500  # Process 500 stores at a time
-    data = []
-    
-    for chunk_start in range(1, n_stores + 1, chunk_size):
-        chunk_end = min(chunk_start + chunk_size - 1, n_stores)
-        chunk_stores = list(range(chunk_start, chunk_end + 1))
-        
-        chunk_data = []
-        for store in chunk_stores:
-            profile = store_profiles[store]
-            
-            for yw in year_weeks:
-                # Weekly variation factor (some weeks are better/worse for all stores)
-                week_factor = np.random.normal(1, 0.1)
-                
-                for metric in all_metrics:
-                    is_ratio = metric in ratio_metrics
-                    
-                    if is_ratio:
-                        # For ratio metrics, generate both numerator and denominator
-                        if 'sales' in metric:
-                            base_num = np.random.randint(5000, 40000) * profile['sales_factor'] * profile['base_multiplier'] * week_factor
-                            base_denom = np.random.randint(1000, 10000) * profile['traffic_factor'] * profile['base_multiplier'] * week_factor
-                        elif 'items' in metric:
-                            base_num = np.random.randint(10000, 50000) * profile['sales_factor'] * profile['base_multiplier'] * week_factor
-                            base_denom = np.random.randint(5000, 15000) * profile['traffic_factor'] * profile['base_multiplier'] * week_factor
-                        elif 'conversion' in metric:
-                            base_num = np.random.randint(500, 5000) * profile['conversion_factor'] * profile['base_multiplier'] * week_factor
-                            base_denom = np.random.randint(5000, 15000) * profile['traffic_factor'] * profile['base_multiplier'] * week_factor
-                        elif 'return' in metric:
-                            base_num = np.random.randint(50, 500) * np.random.normal(1, 0.3) * profile['base_multiplier'] * week_factor
-                            base_denom = np.random.randint(5000, 40000) * profile['sales_factor'] * profile['base_multiplier'] * week_factor
-                        else:
-                            # Generic ratio metrics
-                            base_num = np.random.randint(1000, 10000) * profile['base_multiplier'] * week_factor
-                            base_denom = np.random.randint(100, 1000) * profile['base_multiplier'] * week_factor
-                            
-                        chunk_data.append({
-                            'store': store,
-                            'year_week': yw,
-                            'metric': metric,
-                            'numerator': int(base_num),
-                            'denominator': int(base_denom),
-                            'isratio': True
-                        })
-                    else:
-                        # For regular metrics
-                        if 'sales' in metric:
-                            base_value = np.random.randint(5000, 40000) * profile['sales_factor'] * profile['base_multiplier'] * week_factor
-                        elif 'visit' in metric:
-                            base_value = np.random.randint(1000, 10000) * profile['traffic_factor'] * profile['base_multiplier'] * week_factor
-                        elif 'unit' in metric:
-                            base_value = np.random.randint(5000, 30000) * profile['sales_factor'] * profile['base_multiplier'] * week_factor
-                        else:
-                            # Generic value metrics
-                            base_value = np.random.randint(1000, 20000) * profile['base_multiplier'] * week_factor
-                            
-                        chunk_data.append({
-                            'store': store,
-                            'year_week': yw,
-                            'metric': metric,
-                            'numerator': int(base_value),
-                            'denominator': None,
-                            'isratio': False
-                        })
-        
-        # Add the chunk to our main data list
-        data.extend(chunk_data)
-        print(f"Processed stores {chunk_start} to {chunk_end}")
-    
-    # Convert to dataframe
-    df = pd.DataFrame(data)
-    
-    # Add some outliers if requested
-    if with_outliers:
-        # Add 50 random outliers (extremely high values)
-        for _ in range(50):
-            store = np.random.choice(stores)
-            yw = np.random.choice(year_weeks)
-            metric = np.random.choice([m for m in all_metrics if m not in ratio_metrics])
-            
-            # Find the corresponding row
-            idx = df[(df['store'] == store) & (df['year_week'] == yw) & (df['metric'] == metric)].index
-            if len(idx) > 0:
-                # Create a high outlier (5-10x normal)
-                df.loc[idx[0], 'numerator'] = int(df.loc[idx[0], 'numerator'] * np.random.uniform(5, 10))
-        
-        # Add 50 random outliers (extremely low values)
-        for _ in range(50):
-            store = np.random.choice(stores)
-            yw = np.random.choice(year_weeks)
-            metric = np.random.choice([m for m in all_metrics if m not in ratio_metrics])
-            
-            # Find the corresponding row
-            idx = df[(df['store'] == store) & (df['year_week'] == yw) & (df['metric'] == metric)].index
-            if len(idx) > 0:
-                # Create a low outlier (0.1-0.3x normal)
-                df.loc[idx[0], 'numerator'] = int(df.loc[idx[0], 'numerator'] * np.random.uniform(0.1, 0.3))
-    
-    # Optimize the dataframe
-    df = optimize_dataframe(df)
-    
-    return df
+# Load your data from CSV file or database
+# Example:
+# df = pd.read_csv('your_metrics_data.csv')
+df = pd.read_csv('your_metrics_data.csv')  # Replace with your actual data source
 
-# Load your data (or create sample data for demonstration)
-# Normally you would load with: df = pd.read_csv('your_data.csv')
-# And then optimize: df = optimize_dataframe(df)
+# Optimize the dataframe to reduce memory usage
+df = optimize_dataframe(df)
 
-# For demonstration, create a smaller sample to make the notebook run faster
-# In real use, you'd use more stores and metrics
-df = create_sample_data(n_stores=100, n_metrics=10, n_weeks=5)
-print(f"Sample data shape: {df.shape}")
+print(f"Data shape: {df.shape}")
+print(f"Number of stores: {df['store'].nunique()}")
+print(f"Number of metrics: {df['metric'].nunique()}")
+print(f"Number of time periods: {df['year_week'].nunique()}")
 df.head()
 
 ## 3. Enhanced Exploratory Data Analysis
@@ -549,7 +401,7 @@ def visualize_cluster_profiles(df, metrics):
     print("Average values by cluster:")
     return cluster_profiles
 
-# Visualize distribution of a sample metric
+# Visualize distribution of a sample metric (choose one from your metrics list)
 sample_metric = metrics_list[0]  # First metric
 plot_metric_distribution(outlier_results, sample_metric, by_cluster=True)
 
