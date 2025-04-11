@@ -183,7 +183,7 @@ aggregated_df.head()
 def cluster_stores(df, n_clusters=5):
     """
     Group similar stores together using KMeans clustering.
-    This helps identify store patterns across many metrics.
+    Handles missing and invalid values appropriately.
     """
     print(f"Clustering {len(df)} stores into {n_clusters} groups...")
     
@@ -197,6 +197,64 @@ def cluster_stores(df, n_clusters=5):
     if len(numeric_cols) == 0:
         print("No numeric columns found for clustering")
         return df
+    
+    # Check for and handle problematic values
+    print("Checking for problematic values before clustering...")
+    
+    # Count NaN values in each column
+    nan_counts = cluster_df[numeric_cols].isna().sum()
+    print(f"NaN counts per column:\n{nan_counts}")
+    
+    # Count infinite values
+    inf_mask = np.isinf(cluster_df[numeric_cols])
+    inf_counts = inf_mask.sum()
+    print(f"Infinite value counts per column:\n{inf_counts}")
+    
+    # Handle problematic values
+    for col in numeric_cols:
+        # Replace inf with NaN first
+        cluster_df[col] = cluster_df[col].replace([np.inf, -np.inf], np.nan)
+        
+        # Count NaNs now
+        nan_count = cluster_df[col].isna().sum()
+        
+        if nan_count > 0:
+            # If less than 20% are NaN, impute with median
+            if nan_count < 0.2 * len(cluster_df):
+                median_val = cluster_df[col].median()
+                cluster_df[col] = cluster_df[col].fillna(median_val)
+                print(f"Imputed {nan_count} NaN values in '{col}' with median ({median_val})")
+            else:
+                # If too many NaNs, might be better to drop the column
+                print(f"Warning: Column '{col}' has {nan_count} NaN values ({nan_count/len(cluster_df):.1%})")
+                print(f"Consider removing this column for more reliable clustering")
+                # For now we'll still impute but warn the user
+                median_val = cluster_df[col].median()
+                cluster_df[col].fillna(median_val, inplace=True)
+    
+    # Confirm no NaN or inf values remain
+    if cluster_df[numeric_cols].isna().sum().sum() > 0:
+        print("Warning: NaN values remain after cleaning. Dropping those rows.")
+        cluster_df = cluster_df.dropna(subset=numeric_cols)
+    
+    # Check for extreme values that might cause instability
+    for col in numeric_cols:
+        # Calculate z-scores to identify extreme outliers
+        from scipy import stats
+        z_scores = np.abs(stats.zscore(cluster_df[col], nan_policy='omit'))
+        extreme_mask = z_scores > 10  # Very extreme values (10 std deviations)
+        extreme_count = extreme_mask.sum()
+        
+        if extreme_count > 0:
+            print(f"Warning: Found {extreme_count} extreme values in '{col}'")
+            # Cap extreme values to reduce their impact on clustering
+            q1 = cluster_df[col].quantile(0.01)
+            q99 = cluster_df[col].quantile(0.99)
+            cluster_df[col] = cluster_df[col].clip(q1, q99)
+            print(f"Capped values in '{col}' to range [{q1:.2f}, {q99:.2f}]")
+    
+    # Now proceed with standardization and clustering
+    print(f"Proceeding with clustering on {len(cluster_df)} stores with {len(numeric_cols)} metrics")
     
     # Standardize the data (important for KMeans)
     scaler = StandardScaler()
@@ -216,7 +274,7 @@ def cluster_stores(df, n_clusters=5):
     centers['cluster'] = range(n_clusters)
     
     print("\nCluster characteristics (average values per metric):")
-    # Display a summary of the top 2 distinguishing metrics per cluster
+    # Display a summary of the top 3 distinguishing metrics per cluster
     for cluster_id in range(n_clusters):
         # Compare this cluster's centers to overall average
         cluster_center = centers[centers['cluster'] == cluster_id].iloc[0]
@@ -233,11 +291,20 @@ def cluster_stores(df, n_clusters=5):
             direction = "higher" if diff_pct[metric] > 0 else "lower"
             print(f"  {metric}: {abs(diff_pct[metric]):.1f}% {direction} than average")
     
-    return cluster_df
-
-# Cluster the stores
-clustered_df = cluster_stores(aggregated_df, n_clusters=5)
-
+    # Copy the cluster assignments back to the original dataframe indexes
+    if len(cluster_df) < len(df):
+        print(f"Warning: {len(df) - len(cluster_df)} stores were excluded from clustering due to missing values")
+        # Create a new column in the original df
+        result_df = df.copy()
+        # Initialize all to -1 (indicating no cluster)
+        result_df['cluster'] = -1
+        # Update those that were clustered
+        for idx, row in cluster_df.iterrows():
+            store_id = row['store']
+            result_df.loc[result_df['store'] == store_id, 'cluster'] = row['cluster']
+        return result_df
+    else:
+        return cluster_df
 ## 6. Enhanced Outlier Detection
 
 def identify_outliers_efficiently(df, metrics, threshold=1.5):
