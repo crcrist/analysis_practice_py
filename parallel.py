@@ -1,3 +1,5 @@
+# config - 8 cpu / 6000 MB 
+
 import tableauserverclient as tsc
 from dotenv import load_dotenv
 import json
