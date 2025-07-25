@@ -1,5 +1,3 @@
-# config - 8 cpu / 6000 MB 
-
 import tableauserverclient as tsc
 from dotenv import load_dotenv
 import json
@@ -23,29 +21,35 @@ from google.cloud import bigquery
 # Load environment variables
 load_dotenv()
 
-# Configuration
-tableau_token_name = "token"
-tableau_token_value = "faketokenvalue"
+# Configuration - Modified to support multiple PAT tokens
+tableau_tokens = [
+    {"name": "token1", "value": "faketokenvalue1"},
+    {"name": "token2", "value": "faketokenvalue2"},
+    {"name": "token3", "value": "faketokenvalue3"},
+    {"name": "token4", "value": "faketokenvalue4"},
+    # Add more tokens as needed
+]
 outlook_email = "email@email.com"
 outlook_pw = "password"
 workbook_name = "workboook"
 workbook_view_name = ["view_name1", "view_name2", "view_name3"]
 ssl_certificate = "fakecert"
 
-# Thread-safe Tableau connection pool
+# Thread-safe Tableau connection pool with multiple PAT tokens
 class TableauConnectionPool:
-    def __init__(self, size=4):
-        self.size = size
+    def __init__(self, tokens_list):
         self.connections = []
         self.lock = threading.Lock()
         
-        # Create multiple authenticated server connections
-        for _ in range(size):
-            auth = tsc.PersonalAccessTokenAuth(tableau_token_name, tableau_token_value)
+        # Create one authenticated server connection per PAT token
+        for token in tokens_list:
+            auth = tsc.PersonalAccessTokenAuth(token["name"], token["value"])
             server = tsc.Server('faketableauserver.com', use_server_version=True)
             server.add_http_options({'verify': ssl_certificate})
             with server.auth.sign_in(auth):
                 self.connections.append(server)
+        
+        print(f"Initialized connection pool with {len(self.connections)} PAT tokens")
     
     def get_connection(self):
         with self.lock:
@@ -59,8 +63,8 @@ class TableauConnectionPool:
         with self.lock:
             self.connections.append(conn)
 
-# Initialize connection pool
-connection_pool = TableauConnectionPool(size=4)  # Adjust based on your needs
+# Initialize connection pool with multiple PAT tokens
+connection_pool = TableauConnectionPool(tableau_tokens)
 
 # BigQuery setup
 key_path = 'fake/path'
@@ -217,8 +221,11 @@ def main():
     failed = 0
     
     # Use ThreadPoolExecutor for concurrent processing
-    # Adjust max_workers based on your resource constraints
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    # Set max_workers to the number of PAT tokens available
+    max_workers = min(len(tableau_tokens), 8)  # Cap at 8 or number of tokens
+    print(f"Using {max_workers} concurrent workers")
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Submit all tasks
         future_to_user = {
             executor.submit(process_user, user, workbook_id): user 
