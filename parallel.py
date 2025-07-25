@@ -38,30 +38,39 @@ ssl_certificate = "fakecert"
 # Thread-safe Tableau connection pool with multiple PAT tokens
 class TableauConnectionPool:
     def __init__(self, tokens_list):
-        self.connections = []
+        self.tokens = tokens_list
+        self.available_indices = list(range(len(tokens_list)))
         self.lock = threading.Lock()
         
-        # Create one authenticated server connection per PAT token
-        for token in tokens_list:
-            auth = tsc.PersonalAccessTokenAuth(token["name"], token["value"])
-            server = tsc.Server('faketableauserver.com', use_server_version=True)
-            server.add_http_options({'verify': ssl_certificate})
-            with server.auth.sign_in(auth):
-                self.connections.append(server)
-        
-        print(f"Initialized connection pool with {len(self.connections)} PAT tokens")
+        print(f"Initialized connection pool with {len(self.tokens)} PAT tokens")
     
     def get_connection(self):
         with self.lock:
-            if self.connections:
-                return self.connections.pop()
+            if self.available_indices:
+                idx = self.available_indices.pop()
+                token = self.tokens[idx]
+                
+                # Create a fresh authenticated connection
+                auth = tsc.PersonalAccessTokenAuth(token["name"], token["value"])
+                server = tsc.Server('faketableauserver.com', use_server_version=True)
+                server.add_http_options({'verify': ssl_certificate})
+                server.auth.sign_in(auth)
+                
+                return (server, idx)
+        
         # Wait and retry if no connections available
         time.sleep(0.5)
         return self.get_connection()
     
-    def return_connection(self, conn):
+    def return_connection(self, server_tuple):
+        server, idx = server_tuple
+        try:
+            server.auth.sign_out()
+        except:
+            pass  # Ignore sign out errors
+        
         with self.lock:
-            self.connections.append(conn)
+            self.available_indices.append(idx)
 
 # Initialize connection pool with multiple PAT tokens
 connection_pool = TableauConnectionPool(tableau_tokens)
@@ -132,7 +141,8 @@ def process_user(user_data: Dict, workbook_id: str) -> Tuple[str, bool, str]:
         return user, False, "No email address"
     
     # Get a connection from the pool
-    server = connection_pool.get_connection()
+    server_tuple = connection_pool.get_connection()
+    server = server_tuple[0]
     
     try:
         # Get the workbook
@@ -191,7 +201,7 @@ def process_user(user_data: Dict, workbook_id: str) -> Tuple[str, bool, str]:
     
     finally:
         # Return connection to pool
-        connection_pool.return_connection(server)
+        connection_pool.return_connection(server_tuple)
 
 def main():
     """Main execution function"""
@@ -201,7 +211,8 @@ def main():
     users = get_all_users()
     
     # Get workbook ID once (more efficient than searching by name repeatedly)
-    server = connection_pool.get_connection()
+    server_tuple = connection_pool.get_connection()
+    server = server_tuple[0]
     workbook_id = None
     
     try:
@@ -210,7 +221,7 @@ def main():
                 workbook_id = workbook.id
                 break
     finally:
-        connection_pool.return_connection(server)
+        connection_pool.return_connection(server_tuple)
     
     if not workbook_id:
         print(f"Workbook '{workbook_name}' not found!")
