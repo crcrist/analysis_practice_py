@@ -141,8 +141,7 @@ def process_user(user_data: Dict, workbook_id: str) -> Tuple[str, bool, str]:
         return user, False, "No email address"
     
     # Get a connection from the pool
-    server_tuple = connection_pool.get_connection()
-    server = server_tuple[0]
+    server, idx = connection_pool.get_connection()
     
     try:
         # Get the workbook
@@ -201,7 +200,7 @@ def process_user(user_data: Dict, workbook_id: str) -> Tuple[str, bool, str]:
     
     finally:
         # Return connection to pool
-        connection_pool.return_connection(server_tuple)
+        connection_pool.return_connection((server, idx))
 
 def main():
     """Main execution function"""
@@ -211,8 +210,7 @@ def main():
     users = get_all_users()
     
     # Get workbook ID once (more efficient than searching by name repeatedly)
-    server_tuple = connection_pool.get_connection()
-    server = server_tuple[0]
+    server, idx = connection_pool.get_connection()
     workbook_id = None
     
     try:
@@ -221,7 +219,7 @@ def main():
                 workbook_id = workbook.id
                 break
     finally:
-        connection_pool.return_connection(server_tuple)
+        connection_pool.return_connection((server, idx))
     
     if not workbook_id:
         print(f"Workbook '{workbook_name}' not found!")
